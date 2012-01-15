@@ -40,7 +40,7 @@ def do_handshake(client_socket, mysql_sockets):
     client_communication_finished = False
     for i in range(len(mysql_sockets)):
         mysql_socket = mysql_sockets[i]
-        if mysql_socket["stats"]["state"] == "dead":
+        if mysql_socket["state"] == "dead":
             continue
         try:
             data = mysql_socket["conn"].recv(4096)
@@ -91,17 +91,20 @@ def do_handshake(client_socket, mysql_sockets):
             if ord(data[4]) == 0:
                 if inserter_index == -1:
                     inserter_index = i
-                mysql_socket["stats"]["state"] = "alive"
+                mysql_socket["state"] = "alive"
+                mysql_socket["stats"]["globalstate"] = "alive"
 #                print "Everything is OK"
             else:
-                mysql_socket["stats"]["state"] = "dead"
+                mysql_socket["state"] = "dead"
+                mysql_socket["stats"]["globalstate"] = "dead"
                 print "Can't connect to one of the MySQL servers"
             if not client_communication_finished:
                 client_socket.sendall(data)
                 client_communication_finished = True
         except socket.error as err:
             print "Declaring the server dead"
-            mysql_socket["stats"]["state"] = "dead"
+            mysql_socket["state"] = "dead"
+            mysql_socket["stats"]["globalstate"] = "dead"
     if inserter_index == -1:
         raise Exception("Unable to process data modification queries, the cluster seems to be dead")
 
@@ -128,7 +131,7 @@ def do_commands(client_socket, mysql_sockets):
             recv_sockets = []
             if ord(command[4]) == 1:
                 for mysql_socket in mysql_sockets:
-                    if mysql_socket["stats"]["state"] == "dead":
+                    if mysql_socket["state"] == "dead":
                         continue
                     mysql_socket["conn"].sendall(command)
                     mysql_socket["conn"].close()
@@ -144,7 +147,7 @@ def do_commands(client_socket, mysql_sockets):
                     totalselects += 1
 #                    mysql_sockets[0]["conn"].sendall(command)
 #                    recv_socket = mysql_sockets[0]["conn"]
-                    while mysql_sockets[nextconnindex]["stats"]["state"] == "dead":
+                    while mysql_sockets[nextconnindex]["state"] == "dead":
                        nextconnindex += 1
                        if nextconnindex == len(mysql_sockets):
                            nextconnindex = 0
@@ -165,7 +168,7 @@ def do_commands(client_socket, mysql_sockets):
                     totalsets += 1
                     # To all parties
                     for mysql_socket in mysql_sockets:
-                        if mysql_socket["stats"]["state"] == "dead":
+                        if mysql_socket["state"] == "dead":
                             continue
                         mysql_socket["conn"].sendall(command)
                         recv_sockets.append(mysql_socket)
@@ -178,14 +181,14 @@ def do_commands(client_socket, mysql_sockets):
             elif ord(command[4]) == 2:
                 # This is "INIT_DB", send to all parties
                 for mysql_socket in mysql_sockets:
-                    if mysql_socket["stats"]["state"] == "dead":
+                    if mysql_socket["state"] == "dead":
                         continue
                     mysql_socket["conn"].sendall(command)
                     recv_sockets.append(mysql_socket)
             elif ord(command[4]) == 0x1B:
                 # This is "COM_SET_OPTION", send to all parties
                 for mysql_socket in mysql_sockets:
-                    if mysql_socket["stats"]["state"] == "dead":
+                    if mysql_socket["state"] == "dead":
                         continue
                     mysql_socket["conn"].sendall(command)
                     recv_sockets.append(mysql_socket)
@@ -240,23 +243,29 @@ def handle(client_socket, address):
     mysql_sockets = []
     # First connection is always master, it gets all modifications
     mysql_socket1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)    
+    state = "alive"
     try:
         # TODO: add a timer here to wait 10s if a server is dead before
         #       trying to reconnect again
         mysql_socket1.connect(('192.168.127.3', 3306))
-        mysql_stats[0]["state"] = "alive"
+        mysql_stats[0]["globalstate"] = "alive"
+        state = "alive"
     except socket.error as err:
-        mysql_stats[0]["state"] = "dead"
-    mysql_sockets.append({"conn": mysql_socket1, "stats":mysql_stats[0]})
+        mysql_stats[0]["globalstate"] = "dead"
+        state = "dead"
+    mysql_sockets.append({"conn": mysql_socket1, "state":state, "stats":mysql_stats[0]})
     mysql_socket2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)    
+    state = "alive"
     try:
         # TODO: add a timer here to wait 10s if a server is dead before
         #       trying to reconnect again
         mysql_socket2.connect(('192.168.127.4', 3306))
-        mysql_stats[1]["state"] = "alive"
+        mysql_stats[1]["globalstate"] = "alive"
+        state = "alive"
     except socket.error as err:
-        mysql_stats[1]["state"] = "dead"
-    mysql_sockets.append({"conn": mysql_socket2, "stats":mysql_stats[1]})
+        mysql_stats[1]["globalstate"] = "dead"
+        state = "dead"
+    mysql_sockets.append({"conn": mysql_socket2, "state":state, "stats":mysql_stats[1]})
     do_handshake(client_socket, mysql_sockets)
     do_commands(client_socket, mysql_sockets)
 
@@ -270,7 +279,7 @@ def stathandler(request):
               ', inserts: ' + str(totalinserts) + ', updates: ' + str(totalupdates) + ', deletes: ' + str(totaldeletes) + ', sets: ' + str(totalsets) + '\n'
         i=0
         for mysql_stat in mysql_stats:
-            msg = msg + "\nServer #" + str(i) + " (" + mysql_stat["state"] + "):\n" + \
+            msg = msg + "\nServer #" + str(i) + " (" + mysql_stat["globalstate"] + "):\n" + \
                   't<1ms: ' + str(mysql_stat["ttlless1ms"]) + ', 1ms<t<10ms: ' + str(mysql_stat["ttl1ms10ms"]) + ', 10ms<t<100ms: ' + str(mysql_stat["ttl10ms100ms"]) + \
                   ', 100ms<t<1s: ' + str(mysql_stat["ttl100ms1s"]) + \
                   ', 1s<t<10s: ' + str(mysql_stat["ttl1s10s"]) + \
@@ -290,11 +299,12 @@ def process_stats():
 
 setproctitle("yybal")
 mysql_stats = []
-# TODO: the state should not be defined globally, it should be isolated at a connection level
-#       to prevent situations when a server becomes alive for not properly initialized conns
-#       question: what to do with persistent connections?
-mysql_stats.append({"state":"alive", "numqueries":0, "ttlless1ms":0, "ttl1ms10ms":0, "ttl10ms100ms":0, "ttl100ms1s":0, "ttl1s10s":0, "ttlmore10s":0})
-mysql_stats.append({"state":"alive", "numqueries":0, "ttlless1ms":0, "ttl1ms10ms":0, "ttl10ms100ms":0, "ttl100ms1s":0, "ttl1s10s":0, "ttlmore10s":0})
+# The connection state should not be defined globally, it should be isolated at a connection level
+# to prevent situations when a server becomes alive for not properly initialized conns
+# We use this global state for reporting only
+#       Question: what to do with persistent connections?
+mysql_stats.append({"globalstate":"alive", "numqueries":0, "ttlless1ms":0, "ttl1ms10ms":0, "ttl10ms100ms":0, "ttl100ms1s":0, "ttl1s10s":0, "ttlmore10s":0})
+mysql_stats.append({"globalstate":"alive", "numqueries":0, "ttlless1ms":0, "ttl1ms10ms":0, "ttl10ms100ms":0, "ttl100ms1s":0, "ttl1s10s":0, "ttlmore10s":0})
 thread.start_new_thread(process_stats, ())
 gevent.monkey.patch_socket()
 statsserver = HTTPServer(('', 9080), stathandler)
