@@ -42,84 +42,66 @@ def do_handshake(client_socket, mysql_sockets):
         mysql_socket = mysql_sockets[i]
         if mysql_socket["stats"]["state"] == "dead":
             continue
-        data = mysql_socket["conn"].recv(4096)
-#        print "Length of initial packet: %(len)d" % { 'len': len(data) }
-#        print "data is: " + data
-        firstnull = data.find("\x00", 4)
-#        print "First null position is: " + str(firstnull)
-        versize = firstnull - 5
-        scramble2len = len(data) - versize - 36
-        formatstr = "xxxxx" + str(versize) + "sxxxx8sxxxxxxxxBxxxxxxxxxx" + str(scramble2len) + "s"
-#        print "The format string is: " + formatstr
-        (version, scramble1, scramblelen, scramble2) = unpack(formatstr, data)
-#        print "version is: " + version
-#        print "scramblelen is: %(len)d" % { 'len': scramblelen }
-#        print "scramble1 is: " + scramble1
-#        print "scramble2 is: " + scramble2
-        if not client_communication_finished:
-            client_socket.sendall(data)
-            data = client_socket.recv(4096)
-#            print "Length of client packet: %(len)d" % { 'len': len(data) }
-            firstnull = data.find("\x00", 36)
+        try:
+            data = mysql_socket["conn"].recv(4096)
+#            print "Length of initial packet: %(len)d" % { 'len': len(data) }
+#            print "data is: " + data
+            firstnull = data.find("\x00", 4)
 #            print "First null position is: " + str(firstnull)
-#            print "data is: " + data
-            usersize = firstnull - 36
-            cliscramblelen = ord(data[firstnull+1])
-#            print "Client scramble length is: %(len)d" % { 'len': cliscramblelen }
-            dbnamestart = firstnull+1+cliscramblelen+1
-#            print "A db name starts at: %(start)d" % { 'start': dbnamestart }
-            dbnamelen = len(data) - dbnamestart
-            formatstr = "3s33s" + str(usersize) + "sxB" + str(cliscramblelen) + "s" + str(dbnamelen) + "s"
-            (packetlen, flags, username, cliscramblesize, cliscramble, dbname) = unpack(formatstr, data)
-#            print "packetlen[0] is: %(byte)d" % { 'byte': ord(packetlen[0]) }
-#            print "packetlen[1] is: %(byte)d" % { 'byte': ord(packetlen[1]) }
-#            print "packetlen[2] is: %(byte)d" % { 'byte': ord(packetlen[2]) }
-#            print "client scramble size is: %(size)d" % { 'size': cliscramblesize }
-#            print "username is: " + username
-#            print "client scramble is: " + cliscramble
-#            print "dbname is: " + dbname
-#            print "data is: " + data
-#            if len(dbname) == 0:
-#                print "Well, there is no DB name actually"
-            plen = len(data) - 4 - cliscramblelen - usersize - 1 + len("croot\x00")
-            ourdata = pack("BBB33s" + str(len("croot\x00")) + "sB" + str(dbnamelen) + "s", plen, 0, 0, flags, "croot\x00", 0, dbname)
-#    print "Length of our client packet: %(len)d" % { 'len': len(ourdata) }
-#    firstnull = ourdata.find("\x00", 36)
-#    print "First null position is: " + str(firstnull)
-#    print "ourdata is: " + ourdata
-#    usersize = firstnull - 36
-#    cliscramblelen = ord(ourdata[firstnull+1])
-#    print "Client scramble length is: %(len)d" % { 'len': cliscramblelen }
-#    dbnamestart = firstnull+1+cliscramblelen+1
-#    print "A db name starts at: %(start)d" % { 'start': dbnamestart }
-#    dbnamelen = len(ourdata) - dbnamestart
-#    formatstr = "3s33s" + str(usersize) + "sxB" + str(cliscramblelen) + "s" + str(dbnamelen) + "s"
-#    (packetlen, flags, username, cliscramblesize, cliscramble, dbname) = unpack(formatstr, ourdata)
-#    print "packetlen[0] is: %(byte)d" % { 'byte': ord(packetlen[0]) }
-#    print "packetlen[1] is: %(byte)d" % { 'byte': ord(packetlen[1]) }
-#    print "packetlen[2] is: %(byte)d" % { 'byte': ord(packetlen[2]) }
-#    print "client scramble size is: %(size)d" % { 'size': cliscramblesize }
-#    print "username is: " + username
-#    print "client scramble is: " + cliscramble
-#    print "dbname is: " + dbname
-#    print "ourdata is: " + ourdata
-#    if len(dbname) == 0:
-#        print "Well, there is no DB name actually"
-        mysql_socket["conn"].sendall(ourdata)
-        data = mysql_socket["conn"].recv(4096)
-#        print "Length of answer packet: %(len)d" % { 'len': len(data) }
-#        print "data: " + data
-        if ord(data[4]) == 0:
-            if inserter_index == -1:
-                inserter_index = i
-            mysql_socket["stats"]["state"] = "alive"
-#            print "Everything is OK"
-        else:
+            versize = firstnull - 5
+            scramble2len = len(data) - versize - 36
+            formatstr = "xxxxx" + str(versize) + "sxxxx8sxxxxxxxxBxxxxxxxxxx" + str(scramble2len) + "s"
+#            print "The format string is: " + formatstr
+            (version, scramble1, scramblelen, scramble2) = unpack(formatstr, data)
+#            print "version is: " + version
+#            print "scramblelen is: %(len)d" % { 'len': scramblelen }
+#            print "scramble1 is: " + scramble1
+#            print "scramble2 is: " + scramble2
+            if not client_communication_finished:
+                client_socket.sendall(data)
+                data = client_socket.recv(4096)
+#                print "Length of client packet: %(len)d" % { 'len': len(data) }
+                firstnull = data.find("\x00", 36)
+#                print "First null position is: " + str(firstnull)
+#                print "data is: " + data
+                usersize = firstnull - 36
+                cliscramblelen = ord(data[firstnull+1])
+#                print "Client scramble length is: %(len)d" % { 'len': cliscramblelen }
+                dbnamestart = firstnull+1+cliscramblelen+1
+#                print "A db name starts at: %(start)d" % { 'start': dbnamestart }
+                dbnamelen = len(data) - dbnamestart
+                formatstr = "3s33s" + str(usersize) + "sxB" + str(cliscramblelen) + "s" + str(dbnamelen) + "s"
+                (packetlen, flags, username, cliscramblesize, cliscramble, dbname) = unpack(formatstr, data)
+#                print "packetlen[0] is: %(byte)d" % { 'byte': ord(packetlen[0]) }
+#                print "packetlen[1] is: %(byte)d" % { 'byte': ord(packetlen[1]) }
+#                print "packetlen[2] is: %(byte)d" % { 'byte': ord(packetlen[2]) }
+#                print "client scramble size is: %(size)d" % { 'size': cliscramblesize }
+#                print "username is: " + username
+#                print "client scramble is: " + cliscramble
+#                print "dbname is: " + dbname
+#                print "data is: " + data
+#                if len(dbname) == 0:
+#                    print "Well, there is no DB name actually"
+                plen = len(data) - 4 - cliscramblelen - usersize - 1 + len("croot\x00")
+                ourdata = pack("BBB33s" + str(len("croot\x00")) + "sB" + str(dbnamelen) + "s", plen, 0, 0, flags, "croot\x00", 0, dbname)
+            mysql_socket["conn"].sendall(ourdata)
+            data = mysql_socket["conn"].recv(4096)
+#            print "Length of answer packet: %(len)d" % { 'len': len(data) }
+#            print "data: " + data
+            if ord(data[4]) == 0:
+                if inserter_index == -1:
+                    inserter_index = i
+                mysql_socket["stats"]["state"] = "alive"
+#                print "Everything is OK"
+            else:
+                mysql_socket["stats"]["state"] = "dead"
+                print "Can't connect to one of the MySQL servers"
+            if not client_communication_finished:
+                client_socket.sendall(data)
+                client_communication_finished = True
+        except socket.error as err:
+            print "Declaring the server dead"
             mysql_socket["stats"]["state"] = "dead"
-            print "Can't connect to one of the MySQL servers"
-        if not client_communication_finished:
-            client_socket.sendall(data)
-            client_communication_finished = True
     if inserter_index == -1:
         raise Exception("Unable to process data modification queries, the cluster seems to be dead")
 
@@ -259,13 +241,19 @@ def handle(client_socket, address):
     # First connection is always master, it gets all modifications
     mysql_socket1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)    
     try:
+        # TODO: add a timer here to wait 10s if a server is dead before
+        #       trying to reconnect again
         mysql_socket1.connect(('192.168.127.3', 3306))
+        mysql_stats[0]["state"] = "alive"
     except socket.error as err:
         mysql_stats[0]["state"] = "dead"
     mysql_sockets.append({"conn": mysql_socket1, "stats":mysql_stats[0]})
     mysql_socket2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)    
     try:
+        # TODO: add a timer here to wait 10s if a server is dead before
+        #       trying to reconnect again
         mysql_socket2.connect(('192.168.127.4', 3306))
+        mysql_stats[1]["state"] = "alive"
     except socket.error as err:
         mysql_stats[1]["state"] = "dead"
     mysql_sockets.append({"conn": mysql_socket2, "stats":mysql_stats[1]})
@@ -284,7 +272,9 @@ def stathandler(request):
         for mysql_stat in mysql_stats:
             msg = msg + "\nServer #" + str(i) + " (" + mysql_stat["state"] + "):\n" + \
                   't<1ms: ' + str(mysql_stat["ttlless1ms"]) + ', 1ms<t<10ms: ' + str(mysql_stat["ttl1ms10ms"]) + ', 10ms<t<100ms: ' + str(mysql_stat["ttl10ms100ms"]) + \
-                  ', 100ms<t<1s: ' + str(mysql_stat["ttl100ms1s"]) + ', 1s<t<10s: ' + str(mysql_stat["ttl1s10s"]) + ', 10s<t: ' + str(mysql_stat["ttlmore10s"]) + '\n'
+                  ', 100ms<t<1s: ' + str(mysql_stat["ttl100ms1s"]) + \
+                  ', 1s<t<10s: ' + str(mysql_stat["ttl1s10s"]) + \
+                  ', 10s<t: ' + str(mysql_stat["ttlmore10s"]) + "\n"
             i += 1
         request.add_output_header('Connection', 'close')
         request.add_output_header('Content-type', 'text/plain')
@@ -300,8 +290,11 @@ def process_stats():
 
 setproctitle("yybal")
 mysql_stats = []
-mysql_stats.append({"state":None, "numqueries":0, "ttlless1ms":0, "ttl1ms10ms":0, "ttl10ms100ms":0, "ttl100ms1s":0, "ttl1s10s":0, "ttlmore10s":0})
-mysql_stats.append({"state":None, "numqueries":0, "ttlless1ms":0, "ttl1ms10ms":0, "ttl10ms100ms":0, "ttl100ms1s":0, "ttl1s10s":0, "ttlmore10s":0})
+# TODO: the state should not be defined globally, it should be isolated at a connection level
+#       to prevent situations when a server becomes alive for not properly initialized conns
+#       question: what to do with persistent connections?
+mysql_stats.append({"state":"alive", "numqueries":0, "ttlless1ms":0, "ttl1ms10ms":0, "ttl10ms100ms":0, "ttl100ms1s":0, "ttl1s10s":0, "ttlmore10s":0})
+mysql_stats.append({"state":"alive", "numqueries":0, "ttlless1ms":0, "ttl1ms10ms":0, "ttl10ms100ms":0, "ttl100ms1s":0, "ttl1s10s":0, "ttlmore10s":0})
 thread.start_new_thread(process_stats, ())
 gevent.monkey.patch_socket()
 statsserver = HTTPServer(('', 9080), stathandler)
